@@ -1,0 +1,481 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Admin 2FA Flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: one centred auth card per step under a slim demo bar; dashboard reuses the card width. */
+:root {
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --fg: #15171c;
+  --muted: #5d6472;
+  --line: #dfe2e8;
+  --accent: #3b4cca;
+  --accent-fg: #ffffff;
+  --accent-soft: #e9ecff;
+  --danger: #c93636;
+  --danger-soft: #fdeaea;
+  --ok: #1b7f4b;
+  --ok-soft: #e4f5ec;
+  --warn: #8a5a00;
+  --warn-soft: #fff3d6;
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-code: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115; --surface: #171a21; --fg: #eceef2; --muted: #9aa1ae; --line: #2a2f3a;
+    --accent: #8a97ff; --accent-fg: #0f1115; --accent-soft: #232845;
+    --danger: #ff7d7d; --danger-soft: #3a1f22; --ok: #4cc58a; --ok-soft: #173025;
+    --warn: #f0b84a; --warn-soft: #3a2f14; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1115; --surface: #171a21; --fg: #eceef2; --muted: #9aa1ae; --line: #2a2f3a;
+  --accent: #8a97ff; --accent-fg: #0f1115; --accent-soft: #232845;
+  --danger: #ff7d7d; --danger-soft: #3a1f22; --ok: #4cc58a; --ok-soft: #173025;
+  --warn: #f0b84a; --warn-soft: #3a2f14; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 40px;
+}
+.demo {
+  max-width: 880px; margin: 0 auto 20px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+  justify-content: space-between; font-size: 13px; color: var(--muted);
+  border-bottom: 1px solid var(--line); padding-bottom: 12px;
+}
+.demo b { color: var(--fg); font-weight: 600; }
+.demo code { font-family: var(--font-code); font-size: 12.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; color: var(--fg); }
+.demo .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+main { display: flex; justify-content: center; }
+.card {
+  width: 100%; max-width: 420px; min-width: 0; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; padding: 28px 24px 24px; box-shadow: 0 6px 24px rgba(10, 12, 30, 0.06);
+}
+.card.wide { max-width: 480px; }
+.card.dash { max-width: 640px; }
+.ico {
+  width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 14px; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent);
+}
+.ico svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+h1 { font-size: 22px; line-height: 1.25; text-align: center; margin: 0 0 4px; font-weight: 600; text-wrap: balance; }
+.sub { text-align: center; color: var(--muted); margin: 0 0 20px; text-wrap: balance; }
+label { display: block; font-size: 13px; font-weight: 500; margin: 14px 0 6px; }
+input[type=email], input[type=password], input[type=text] {
+  width: 100%; height: 42px; padding: 0 12px; font: inherit; color: var(--fg); background: var(--surface);
+  border: 1.5px solid var(--line); border-radius: 8px; outline: none;
+}
+input:focus-visible, button:focus-visible, a:focus-visible, .otp-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input.err { border-color: var(--danger); }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 42px; padding: 0 16px;
+  font: inherit; font-weight: 500; border-radius: 8px; border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--fg); cursor: pointer;
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.06); border-color: var(--accent); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.sm { height: 32px; padding: 0 12px; font-size: 13px; }
+.btn.block { width: 100%; margin-top: 16px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.alert { border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-bottom: 8px; }
+.alert.warn { background: var(--warn-soft); color: var(--warn); }
+.alert.error { background: var(--danger-soft); color: var(--danger); }
+.otp-row { display: flex; justify-content: center; gap: 10px; margin: 18px 0 6px; }
+.otp-box {
+  width: 48px; height: 56px; text-align: center; font: 600 24px var(--font-code); color: var(--fg);
+  background: var(--surface); border: 1.5px solid var(--line); border-radius: 8px; outline: none; padding: 0; min-width: 0;
+}
+.otp-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.otp-box.err { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.otp-box:disabled { opacity: 0.5; cursor: not-allowed; }
+.shake { animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+@keyframes shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-8px); } 40%, 60% { transform: translateX(8px); } }
+.otp-error { color: var(--danger); text-align: center; min-height: 22px; font-size: 14px; }
+.links { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.qr { width: 188px; height: 188px; margin: 0 auto; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+.qr svg { display: block; width: 100%; height: 100%; }
+.secret { font-family: var(--font-code); font-size: 15px; letter-spacing: 2px; text-align: center; background: var(--bg); border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; word-break: break-all; }
+.steps { display: flex; gap: 8px; margin-bottom: 20px; font-size: 13px; color: var(--muted); }
+.steps span { flex: 1; padding-top: 8px; border-top: 3px solid var(--line); }
+.steps span.on { border-color: var(--accent); color: var(--fg); font-weight: 500; }
+.step-label { margin: 18px 0 0; font-size: 14px; }
+.codes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0; }
+.code { font-family: var(--font-code); font-size: 16px; letter-spacing: 1.5px; text-align: center; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 4px; }
+.check { display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 0; font-size: 14px; }
+.check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--accent); }
+.dash-head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.dash-head h1 { text-align: left; margin: 0; }
+.panel { border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.panel + .panel { margin-top: 12px; }
+.panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.row > div { min-width: 0; }
+.tag { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 1px 10px; margin-left: 6px; vertical-align: 1px; }
+.tag.on { background: var(--ok-soft); color: var(--ok); }
+.tag.off { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.overlay { position: fixed; inset: 0; background: rgba(8, 10, 20, 0.55); display: grid; place-items: center; padding: 16px; z-index: 20; }
+.modal { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px 20px 18px; max-height: 100%; overflow-y: auto; }
+.modal h2 { margin: 0 0 4px; font-size: 18px; }
+.modal .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 30; max-width: calc(100% - 32px); }
+@media (max-width: 420px) {
+  .card { padding: 22px 16px 18px; }
+  .otp-row { gap: 6px; }
+  .otp-box { width: 40px; height: 50px; font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .shake { animation: none; } }
+</style>
+
+<div class="demo">
+  <div><b>Prototype.</b> Any password works. Authenticator code <code>123456</code>. Backup codes appear during setup.</div>
+  <div class="acts">
+    <button class="btn sm" id="expire" hidden>Simulate session expiry</button>
+    <button class="btn sm" id="reset">Reset demo</button>
+  </div>
+</div>
+<main id="app"></main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+(function () {
+  const SESSION = 5 * 60 * 1000;
+  const LOCK = 5 * 60 * 1000;
+  const GOOD_TOTP = '123456';
+  const $ = (s, r) => (r || document).querySelector(s);
+  const app = $('#app');
+  const expireBtn = $('#expire');
+  let timer = null;
+
+  const fresh = () => ({ screen: 'login', twoFA: false, pending: false, authed: false, email: '', started: 0, fails: 0, lockedUntil: 0, secret: '', backup: [], notice: '', setupStep: 0, exported: false });
+  let S = fresh();
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const locked = () => Date.now() < S.lockedUntil;
+
+  const ICONS = {
+    shield: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/>',
+    phone: '<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/>',
+    key: '<circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L20 3M16 7l3 3"/>',
+    qr: '<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v6h-3"/>'
+  };
+  const shell = (icon, title, sub, body, cls) =>
+    '<section class="card ' + (cls || '') + '"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[icon] + '</svg></div><h1>' + title + '</h1>' +
+    (sub ? '<p class="sub">' + sub + '</p>' : '') + body + '</section>';
+
+  function toast(msg) {
+    const t = $('#toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 2600);
+  }
+
+  /* ---------- OTP boxes: auto-advance, backspace, arrows, paste ---------- */
+  function otp(root, opts) {
+    const len = (opts && opts.len) || 6;
+    root.className = 'otp-row';
+    let v = '';
+    const inputs = [];
+    for (let i = 0; i < len; i++) {
+      const el = document.createElement('input');
+      el.className = 'otp-box'; el.type = 'text'; el.inputMode = 'numeric'; el.maxLength = len;
+      el.autocomplete = i ? 'off' : 'one-time-code';
+      el.setAttribute('aria-label', 'Digit ' + (i + 1) + ' of ' + len);
+      root.appendChild(el); inputs.push(el);
+    }
+    const paint = () => inputs.forEach((el, i) => (el.value = v[i] || ''));
+    const commit = (n) => {
+      v = n.replace(/\D/g, '').slice(0, len); paint();
+      if (api.onChange) api.onChange(v);
+      if (v.length === len && opts && opts.onComplete) opts.onComplete(v);
+    };
+    inputs.forEach((el, i) => {
+      el.addEventListener('input', () => {
+        const d = el.value.replace(/\D/g, '');
+        if (!d) { paint(); return; }
+        const n = (v.slice(0, i) + d).slice(0, len);
+        commit(n); inputs[Math.min(n.length, len - 1)].focus();
+      });
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace') {
+          e.preventDefault();
+          if (v[i]) commit(v.slice(0, i) + v.slice(i + 1));
+          else if (i > 0) { commit(v.slice(0, i - 1) + v.slice(i)); inputs[i - 1].focus(); }
+        } else if (e.key === 'ArrowLeft' && i > 0) inputs[i - 1].focus();
+        else if (e.key === 'ArrowRight' && i < len - 1) inputs[i + 1].focus();
+      });
+      el.addEventListener('focus', () => el.select());
+    });
+    root.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const t = ((e.clipboardData && e.clipboardData.getData('text')) || '').replace(/\D/g, '').slice(0, len);
+      if (!t) return;
+      commit(t); inputs[Math.min(t.length, len - 1)].focus();
+    });
+    const api = {
+      onChange: null,
+      get value() { return v; },
+      clear() { commit(''); inputs[0].focus(); },
+      focus() { inputs[0].focus(); },
+      setDisabled(b) { inputs.forEach((i) => (i.disabled = b)); },
+      setError(b) { inputs.forEach((i) => i.classList.toggle('err', b)); },
+      shake() { root.classList.remove('shake'); void root.offsetWidth; root.classList.add('shake'); }
+    };
+    return api;
+  }
+
+  /* ---------- mock backend ---------- */
+  function check(kind, code) {
+    if (locked()) return { locked: true };
+    const ok = kind === 'totp' ? code === GOOD_TOTP : S.backup.indexOf(code) !== -1;
+    if (ok) {
+      if (kind === 'backup') S.backup = S.backup.filter((c) => c !== code);
+      S.fails = 0; return { ok: true };
+    }
+    S.fails++;
+    if (S.fails >= 5) { S.lockedUntil = Date.now() + LOCK; S.fails = 0; return { locked: true }; }
+    return { left: 5 - S.fails };
+  }
+  const rnd = (n) => { const a = new Uint32Array(n); crypto.getRandomValues(a); return a; };
+  const newSecret = () => Array.from(rnd(16)).map((x) => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'[x % 32]).join('');
+  const newBackup = () => Array.from(rnd(8)).map((x) => String(10000000 + (x % 90000000)));
+
+  function qrSvg(text) {
+    if (typeof qrcode !== 'function') return '<div class="small muted" style="padding:12px">QR library unavailable. Use the key below.</div>';
+    const q = qrcode(0, 'M'); q.addData(text); q.make();
+    const n = q.getModuleCount(); let r = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) r += '<rect x="' + x + '" y="' + y + '" width="1" height="1"/>';
+    return '<svg viewBox="0 0 ' + n + ' ' + n + '" fill="#000" shape-rendering="crispEdges" role="img" aria-label="QR code for Google Authenticator">' + r + '</svg>';
+  }
+  async function copyText(text, node) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (e) {
+      const r = document.createRange(); r.selectNodeContents(node);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r); return false;
+    }
+  }
+
+  /* ---------- router ---------- */
+  const allowed = (s) => ({
+    login: true,
+    verify: S.pending && S.twoFA, backup: S.pending && S.twoFA,
+    setup: S.pending || S.authed, dashboard: S.authed
+  }[s] || false);
+  function go(screen) {
+    clearInterval(timer); timer = null;
+    S.screen = screen;
+    expireBtn.hidden = !(screen === 'verify' || screen === 'backup');
+    try { if (location.hash !== '#' + screen) location.hash = screen; } catch (e) {}
+    ({ login: loginView, verify: verifyView, backup: backupView, setup: setupView, dashboard: dashView }[screen])();
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', () => {
+    const s = location.hash.slice(1);
+    if (s === S.screen) return;
+    go(allowed(s) ? s : 'login');
+  });
+
+  function startTick(update) {
+    const f = () => {
+      const left = S.started + SESSION - Date.now();
+      if (left <= 0) { S.notice = 'Your verification session expired. Please sign in again.'; go('login'); return; }
+      update(left);
+    };
+    timer = setInterval(f, 1000); f();
+  }
+
+  /* ---------- screens ---------- */
+  function loginView() {
+    S.pending = false; S.authed = false;
+    app.innerHTML = shell('shield', 'Admin sign in', 'Enter your credentials to continue',
+      (S.notice ? '<div class="alert warn" role="alert">' + esc(S.notice) + '</div>' : '') +
+      '<div id="lerr"></div><form id="lf" novalidate>' +
+      '<label for="em">Email</label><input id="em" type="email" value="' + esc(S.email || 'admin@company.com') + '" autocomplete="username">' +
+      '<label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" placeholder="Any password works in this demo">' +
+      '<button class="btn primary block" id="lb" type="submit">Log in</button></form>');
+    S.notice = '';
+    $('#lf').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const em = $('#em').value.trim(), pw = $('#pw').value;
+      if (!/^\S+@\S+\.\S+$/.test(em) || !pw) {
+        $('#lerr').innerHTML = '<div class="alert error" role="alert">' + (!pw ? 'Enter your password.' : 'Enter a valid email.') + '</div>'; return;
+      }
+      $('#lb').disabled = true; $('#lb').textContent = 'Signing in…';
+      setTimeout(() => { S.email = em; S.pending = true; S.started = Date.now(); go(S.twoFA ? 'verify' : 'setup'); }, 450);
+    });
+    $('#pw').focus();
+  }
+
+  function sessionLine(left) { return 'Session expires in ' + fmt(left); }
+
+  function verifyView() {
+    app.innerHTML = shell('phone', 'Two-step verification', 'Enter the 6-digit code from Google Authenticator',
+      '<div id="o"></div><div class="otp-error" id="oe" role="alert"></div>' +
+      '<button class="btn primary block" id="vb" disabled style="margin-top:8px">Verify</button>' +
+      '<div class="links"><a href="#backup">Use a backup code</a>' +
+      '<span class="muted small">Having trouble? Check your phone\'s clock is set to automatic, or <a href="#login">start over</a>.</span>' +
+      '<span class="muted small" id="sess"></span></div>');
+    const oe = $('#oe'), vb = $('#vb');
+    let busy = false, wasLocked = false;
+    const o = otp($('#o'), { onComplete: submit });
+    o.onChange = (v) => { if (v) { o.setError(false); oe.textContent = ''; } vb.disabled = v.length !== 6 || locked() || busy; };
+    vb.addEventListener('click', () => submit(o.value));
+    function submit(v) {
+      if (busy || locked() || v.length !== 6) return;
+      busy = true; vb.disabled = true; o.setDisabled(true); vb.textContent = 'Verifying…';
+      setTimeout(() => {
+        const r = check('totp', v); busy = false; vb.textContent = 'Verify';
+        if (r.ok) { S.pending = false; S.authed = true; go('dashboard'); return; }
+        o.setDisabled(locked());
+        o.setError(true); o.shake(); o.clear();
+        oe.textContent = r.locked ? '' : 'Invalid code, try again (' + r.left + ' left).';
+        vb.disabled = true;
+      }, 450);
+    }
+    startTick((left) => {
+      $('#sess').textContent = sessionLine(left);
+      if (locked()) { wasLocked = true; o.setDisabled(true); vb.disabled = true; oe.textContent = 'Too many attempts, try again in ' + fmt(S.lockedUntil - Date.now()); }
+      else if (wasLocked) { wasLocked = false; o.setDisabled(false); oe.textContent = ''; o.setError(false); o.focus(); }
+    });
+    if (!locked()) o.focus();
+  }
+
+  function backupView() {
+    app.innerHTML = shell('key', 'Use a backup code', 'Enter one of your 8-digit backup codes. Each code works only once.',
+      '<div id="bw"><input id="bc" type="text" inputmode="numeric" maxlength="8" placeholder="12345678" autocomplete="off" aria-label="Backup code" style="text-align:center;letter-spacing:4px;font:600 20px var(--font-code);height:48px"></div>' +
+      '<div class="otp-error" id="be" role="alert" style="margin-top:8px"></div>' +
+      '<button class="btn primary block" id="bb" disabled style="margin-top:8px">Verify backup code</button>' +
+      '<div class="links"><a href="#verify">Back to authenticator code</a><span class="muted small" id="sess"></span></div>');
+    const bc = $('#bc'), be = $('#be'), bb = $('#bb');
+    let wasLocked = false;
+    bc.addEventListener('input', () => {
+      bc.value = bc.value.replace(/\D/g, '').slice(0, 8); bc.classList.remove('err'); be.textContent = '';
+      bb.disabled = bc.value.length !== 8 || locked();
+    });
+    bc.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !bb.disabled) bb.click(); });
+    bb.addEventListener('click', () => {
+      if (locked()) return;
+      const r = check('backup', bc.value);
+      if (r.ok) { S.pending = false; S.authed = true; toast('Backup code used. ' + S.backup.length + ' left.'); go('dashboard'); return; }
+      bc.classList.add('err'); const w = $('#bw'); w.classList.remove('shake'); void w.offsetWidth; w.classList.add('shake');
+      be.textContent = r.locked ? '' : 'Invalid or already used backup code.'; bc.value = ''; bb.disabled = true; bc.focus();
+    });
+    startTick((left) => {
+      $('#sess').textContent = sessionLine(left);
+      if (locked()) { wasLocked = true; bc.disabled = true; bb.disabled = true; be.textContent = 'Too many attempts, try again in ' + fmt(S.lockedUntil - Date.now()); }
+      else if (wasLocked) { wasLocked = false; bc.disabled = false; be.textContent = ''; bc.focus(); }
+    });
+    bc.focus();
+  }
+
+  function setupView() {
+    if (!S.secret) { S.secret = newSecret(); S.setupStep = 0; S.exported = false; }
+    const steps = '<div class="steps"><span class="' + (S.setupStep === 0 ? 'on' : '') + '">Link app</span><span class="' + (S.setupStep === 1 ? 'on' : '') + '">Backup codes</span></div>';
+    if (S.setupStep === 0) {
+      const url = 'otpauth://totp/Admin:' + encodeURIComponent(S.email || 'admin') + '?secret=' + S.secret + '&issuer=Admin';
+      app.innerHTML = shell('qr', 'Set up two-step verification', 'Protect your admin account with Google Authenticator',
+        steps +
+        '<p class="step-label" style="margin-top:0"><b>1.</b> Open Google Authenticator and scan this QR code.</p>' +
+        '<div class="qr" style="margin-top:12px">' + qrSvg(url) + '</div>' +
+        '<p class="step-label">Can\'t scan? Enter this key manually:</p>' +
+        '<div class="secret" id="sec" style="margin-top:8px">' + S.secret.replace(/(.{4})/g, '$1 ').trim() + '</div>' +
+        '<div style="text-align:center;margin-top:6px"><button class="btn sm" id="cpk" style="border:0;background:none;color:var(--accent)">Copy key</button></div>' +
+        '<p class="step-label" style="margin-bottom:0"><b>2.</b> Enter the 6-digit code from the app to confirm.</p>' +
+        '<div id="o"></div><div class="otp-error" id="oe" role="alert"></div>' +
+        '<button class="btn primary block" id="eb" disabled style="margin-top:8px">Enable 2FA</button>', 'wide');
+      const oe = $('#oe'), eb = $('#eb'); let busy = false;
+      const o = otp($('#o'), { onComplete: confirm });
+      o.onChange = (v) => { if (v) { o.setError(false); oe.textContent = ''; } eb.disabled = v.length !== 6 || busy; };
+      eb.addEventListener('click', () => confirm(o.value));
+      $('#cpk').addEventListener('click', async () => { (await copyText(S.secret, $('#sec'))) ? toast('Key copied') : toast('Key selected. Press Ctrl+C to copy.'); });
+      function confirm(v) {
+        if (busy || v.length !== 6) return;
+        busy = true; eb.disabled = true; o.setDisabled(true); eb.textContent = 'Checking…';
+        setTimeout(() => {
+          busy = false; o.setDisabled(false); eb.textContent = 'Enable 2FA';
+          if (v === GOOD_TOTP) { S.backup = newBackup(); S.twoFA = true; S.setupStep = 1; S.exported = false; setupView(); }
+          else { o.setError(true); o.shake(); o.clear(); oe.textContent = 'Invalid code, try again.'; eb.disabled = true; }
+        }, 450);
+      }
+    } else {
+      app.innerHTML = shell('key', 'Set up two-step verification', '',
+        steps +
+        '<div class="alert warn"><b>Save these backup codes now.</b> They are shown only once. Each code works a single time if you lose your phone.</div>' +
+        '<div class="codes" id="codes">' + S.backup.map((c) => '<div class="code">' + c + '</div>').join('') + '</div>' +
+        '<button class="btn block" id="cc" style="margin-top:0">Copy codes</button>' +
+        '<label class="check"><input type="checkbox" id="sv" disabled><span>I\'ve saved my backup codes somewhere safe</span></label>' +
+        '<button class="btn primary block" id="go" disabled>Continue to dashboard</button>', 'wide');
+      const sv = $('#sv'), gb = $('#go');
+      $('#cc').addEventListener('click', async () => {
+        (await copyText(S.backup.join('\n'), $('#codes'))) ? toast('Backup codes copied') : toast('Codes selected. Press Ctrl+C to copy.');
+        S.exported = true; sv.disabled = false;
+      });
+      sv.addEventListener('change', () => (gb.disabled = !sv.checked));
+      gb.addEventListener('click', () => { S.pending = false; S.authed = true; S.secret = ''; S.setupStep = 0; go('dashboard'); });
+    }
+  }
+
+  function dashView() {
+    app.innerHTML = '<section class="card dash"><div class="dash-head"><div><h1>Dashboard</h1><div class="muted small">Signed in as ' + esc(S.email) + '</div></div>' +
+      '<button class="btn sm" id="lo">Log out</button></div>' +
+      '<div class="panel"><h2>Security</h2><div class="row"><div><b>Two-step verification</b>' +
+      '<span class="tag ' + (S.twoFA ? 'on' : 'off') + '">' + (S.twoFA ? 'Enabled' : 'Off') + '</span><br>' +
+      '<span class="muted small">Google Authenticator (TOTP)' + (S.twoFA ? ' · ' + S.backup.length + ' backup codes left' : '') + '</span></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      (S.twoFA ? '<button class="btn sm" id="rs">Reset</button><button class="btn sm danger" id="ds">Disable</button>' : '<button class="btn sm primary" id="st">Set up</button>') +
+      '</div></div></div></section>';
+    $('#lo').addEventListener('click', () => go('login'));
+    if (S.twoFA) {
+      $('#rs').addEventListener('click', () => modal('reset'));
+      $('#ds').addEventListener('click', () => modal('disable'));
+    } else $('#st').addEventListener('click', () => { S.secret = ''; go('setup'); });
+  }
+
+  function modal(kind) {
+    const ov = document.createElement('div'); ov.className = 'overlay';
+    ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">' + (kind === 'disable' ? 'Disable two-step verification' : 'Reset two-step verification') + '</h2>' +
+      '<p class="muted small" style="margin:0">For your security, confirm your password and a current code from your authenticator app.</p>' +
+      '<div id="me" style="margin-top:12px"></div>' +
+      '<label for="mpw">Password</label><input id="mpw" type="password" autocomplete="current-password">' +
+      '<label style="margin-bottom:0">Authenticator code</label><div id="mo"></div>' +
+      '<div class="foot"><button class="btn" id="mc">Cancel</button><button class="btn ' + (kind === 'disable' ? 'danger' : 'primary') + '" id="mk" disabled>' + (kind === 'disable' ? 'Disable 2FA' : 'Continue') + '</button></div></div>';
+    document.body.appendChild(ov);
+    const mk = $('#mk', ov), mpw = $('#mpw', ov);
+    const o = otp($('#mo', ov), {});
+    const sync = () => (mk.disabled = !mpw.value || o.value.length !== 6);
+    o.onChange = (v) => { if (v) { o.setError(false); $('#me', ov).innerHTML = ''; } sync(); };
+    mpw.addEventListener('input', sync);
+    const close = () => { ov.remove(); document.removeEventListener('keydown', esck); };
+    const esck = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', esck);
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    $('#mc', ov).addEventListener('click', close);
+    mk.addEventListener('click', () => {
+      if (o.value !== GOOD_TOTP) {
+        $('#me', ov).innerHTML = '<div class="alert error" role="alert">Invalid password or code.</div>';
+        o.setError(true); o.shake(); o.clear(); return;
+      }
+      close();
+      if (kind === 'disable') { S.twoFA = false; S.secret = ''; S.backup = []; toast('Two-step verification disabled'); dashView(); }
+      else { S.secret = ''; go('setup'); }
+    });
+    mpw.focus();
+  }
+
+  $('#reset').addEventListener('click', () => { S = fresh(); document.querySelectorAll('.overlay').forEach((n) => n.remove()); go('login'); toast('Demo reset'); });
+  expireBtn.addEventListener('click', () => { S.started = Date.now() - SESSION - 1; });
+
+  go('login');
+})();
+</script>
+
+</body></html>
